@@ -1710,7 +1710,7 @@ export const toolDefinitions: ToolDefinition[] = [
   },
   {
     name: "findAndReplaceInDoc",
-    description: "Find and replace text across a Google Document. Dry-run mode counts matches from paragraph text only (may differ from actual replacements which cover tables, headers, footers, etc.). For multi-tab docs, specify tabId to scope replacements to a single tab.",
+    description: "Find and replace text across a Google Document. Dry-run mode counts matches from tab body text (approximate — actual replacements also cover headers, footers, and footnotes). For multi-tab docs, specify tabId to scope the operation to a single tab.",
     inputSchema: {
       type: "object",
       properties: {
@@ -1718,7 +1718,7 @@ export const toolDefinitions: ToolDefinition[] = [
         findText: { type: "string", description: "Text to find" },
         replaceText: { type: "string", description: "Replacement text" },
         matchCase: { type: "boolean", description: "Case-sensitive match (default: false)" },
-        dryRun: { type: "boolean", description: "Only count approximate matches from paragraph text, do not modify document (default: false). Ignores tabId — always scans the full document body." },
+        dryRun: { type: "boolean", description: "Only count approximate matches from body text, do not modify document (default: false). Scans all tabs, or just the given tabId when provided." },
         tabId: { type: "string", description: "Optional. Tab ID to scope replacements to (from listDocumentTabs). If omitted, replaces across all tabs." }
       },
       required: ["documentId", "findText", "replaceText"]
@@ -2987,22 +2987,34 @@ export async function handleTool(toolName: string, args: Record<string, unknown>
       const docs = ctx.google.docs({ version: 'v1', auth: ctx.authClient });
 
       if (a.dryRun) {
-        const doc = await docs.documents.get({ documentId: a.documentId });
+        // includeTabsContent so multi-tab docs are fully counted — without it,
+        // documents.get only returns the first tab's content in body, which
+        // made dry-run counts diverge from the actual all-tabs replacement.
+        const doc = await docs.documents.get({ documentId: a.documentId, includeTabsContent: true });
         let text = '';
-        const content = doc.data.body?.content || [];
-        for (const el of content) {
-          if (el.paragraph?.elements) {
-            for (const elem of el.paragraph.elements) {
-              if (elem.textRun?.content) text += elem.textRun.content;
+        const tabs = doc.data.tabs as any[] | undefined;
+        if (tabs && tabs.length > 0) {
+          if (a.tabId) {
+            const tab = findTabById(tabs, a.tabId);
+            if (!tab) {
+              return errorResponse(`Tab with ID "${a.tabId}" not found. Use listDocumentTabs to see available tabs.`);
+            }
+            text = extractText(tab.documentTab?.body?.content || [], tab.documentTab?.inlineObjects);
+          } else {
+            for (const { tab } of collectAllTabsWithLevel(tabs)) {
+              text += extractText(tab.documentTab?.body?.content || [], tab.documentTab?.inlineObjects);
             }
           }
+        } else {
+          text = extractText(doc.data.body?.content || [], doc.data.inlineObjects);
         }
         const escaped = a.findText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
         const flags = a.matchCase ? 'g' : 'gi';
         const matches = text.match(new RegExp(escaped, flags));
         const count = matches ? matches.length : 0;
+        const scope = a.tabId ? `tab ${a.tabId}` : 'all tabs';
         return {
-          content: [{ type: 'text', text: `Dry run (paragraph text only, approximate): found ${count} occurrence(s) of "${a.findText}". Note: actual replacement covers the full document including tables, headers, and footers.` }],
+          content: [{ type: 'text', text: `Dry run (body text of ${scope}, approximate): found ${count} occurrence(s) of "${a.findText}". Note: actual replacement also covers headers, footers, and footnotes.` }],
           isError: false,
         };
       }
