@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.5.1](https://github.com/piotr-agier/google-drive-mcp/compare/v2.5.0...v2.5.1) (2026-07-17)
+
+### Distribution
+
+- Publish verified npm/stdio metadata to the official MCP Registry under `io.github.piotr-agier/google-drive-mcp`, with live schema validation and GitHub OIDC publication integrated into the release workflow.
+
 ## [2.5.0](https://github.com/piotr-agier/google-drive-mcp/compare/v2.4.0...v2.5.0) (2026-07-15)
 
 Surfaces **embedded inline images** in Google Docs instead of silently dropping them: the read tools now emit a self-describing image token, and a new **`getGoogleDocImage`** tool fetches an image's bytes on demand for OCR/vision workflows. Additive — no removed or renamed tools/parameters; existing single-user deployments are unaffected.
