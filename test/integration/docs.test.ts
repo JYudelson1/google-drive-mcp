@@ -941,6 +941,60 @@ describe('Docs tools', () => {
       assert.ok(res.content[0].text!.includes('found 2 occurrence'));
     });
 
+    it('dryRun counts across all tabs of a multi-tab doc', async () => {
+      ctx.mocks.docs.service.documents.get._setImpl(async () => ({
+        data: {
+          documentId: 'doc-1', title: 'My Doc',
+          tabs: [
+            { tabProperties: { tabId: 'tab-1' }, documentTab: { body: { content: [{ paragraph: { elements: [{ textRun: { content: 'Hello there\n' } }] } }] } } },
+            { tabProperties: { tabId: 'tab-2' }, documentTab: { body: { content: [{ paragraph: { elements: [{ textRun: { content: 'Hello Hello\n' } }] } }] } } },
+          ],
+        },
+      }));
+      const res = await callTool(ctx.client, 'findAndReplaceInDoc', {
+        documentId: 'doc-1', findText: 'Hello', replaceText: 'Hi', dryRun: true,
+      });
+      assert.equal(res.isError, false);
+      assert.ok(res.content[0].text!.includes('found 3 occurrence'));
+
+      const getCalls = ctx.mocks.docs.tracker.getCalls('documents.get');
+      assert.equal(getCalls[getCalls.length - 1]?.args?.[0]?.includeTabsContent, true);
+      ctx.mocks.docs.service.documents.get._resetImpl();
+    });
+
+    it('dryRun with tabId counts only that tab', async () => {
+      ctx.mocks.docs.service.documents.get._setImpl(async () => ({
+        data: {
+          documentId: 'doc-1', title: 'My Doc',
+          tabs: [
+            { tabProperties: { tabId: 'tab-1' }, documentTab: { body: { content: [{ paragraph: { elements: [{ textRun: { content: 'Hello there\n' } }] } }] } } },
+            { tabProperties: { tabId: 'tab-2' }, documentTab: { body: { content: [{ paragraph: { elements: [{ textRun: { content: 'Hello Hello\n' } }] } }] } } },
+          ],
+        },
+      }));
+      const res = await callTool(ctx.client, 'findAndReplaceInDoc', {
+        documentId: 'doc-1', findText: 'Hello', replaceText: 'Hi', dryRun: true, tabId: 'tab-2',
+      });
+      assert.equal(res.isError, false);
+      assert.ok(res.content[0].text!.includes('found 2 occurrence'));
+      ctx.mocks.docs.service.documents.get._resetImpl();
+    });
+
+    it('dryRun with unknown tabId returns the standard not-found error', async () => {
+      ctx.mocks.docs.service.documents.get._setImpl(async () => ({
+        data: {
+          documentId: 'doc-1', title: 'My Doc',
+          tabs: [{ tabProperties: { tabId: 'tab-1' }, documentTab: { body: { content: [] } } }],
+        },
+      }));
+      const res = await callTool(ctx.client, 'findAndReplaceInDoc', {
+        documentId: 'doc-1', findText: 'x', replaceText: 'y', dryRun: true, tabId: 'missing',
+      });
+      assert.equal(res.isError, true);
+      assert.ok(res.content[0].text!.includes('Tab with ID "missing" not found'));
+      ctx.mocks.docs.service.documents.get._resetImpl();
+    });
+
     it('with tabId scopes replacement via tabsCriteria', async () => {
       const res = await callTool(ctx.client, 'findAndReplaceInDoc', {
         documentId: 'doc-1', findText: 'Hello', replaceText: 'Hi', tabId: 'tab-2',
